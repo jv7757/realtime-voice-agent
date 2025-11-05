@@ -163,14 +163,24 @@ realtime-voice-agent/
 
 ## 工作原理
 
-1. **语音输入**：用户通过麦克风说话，语音通过 Realtime API 传输到 OpenAI
-2. **语音识别**：OpenAI 将语音转为文字（实时转录）
-3. **意图理解**：AI 理解用户意图，决定是否需要调用工具函数
-4. **工具执行**：如果需要，AI 调用相应的工具函数（bash 命令、文件操作等）
+1. **语音输入**：用户通过麦克风说话，使用 `record_audio()` 录制音频
+2. **语音识别**：使用 `gpt-4o-mini-transcribe` 模型将语音转为文字
+3. **意图理解**：Agent 理解用户意图，决定是否需要调用工具函数
+4. **工具执行**：如果需要，Agent 调用相应的工具函数（bash 命令、文件操作等）
+   - 工具函数使用 `@function_tool` 装饰器定义
+   - SDK 自动从函数签名和文档字符串提取工具信息
 5. **结果显示**：
    - 命令执行的完整输出在终端显示
    - AI 语音总结重点信息，避免冗长朗读
-6. **语音回复**：AI 的回复通过扬声器播放，支持自然打断
+6. **文本转语音**：使用 `gpt-4o-mini-tts` 模型生成语音回复
+7. **语音播放**：通过 `AudioPlayer` 播放 AI 的语音回复
+
+### 技术架构
+
+- **VoicePipeline**：管理完整的语音交互流程（STT -> Agent -> TTS）
+- **SingleAgentVoiceWorkflow**：将单个 Agent 封装为语音工作流
+- **Agent**：处理用户请求和工具调用的核心逻辑
+- **@function_tool**：装饰器，自动将 Python 函数转换为 Agent 可用的工具
 
 ## 安全注意事项
 
@@ -202,8 +212,9 @@ Realtime API 需要稳定的网络连接，请检查网络状态。
 ## 参考资料
 
 - [OpenAI Agents Python SDK 文档](https://openai.github.io/openai-agents-python/)
-- [OpenAI Realtime API 指南](https://openai.github.io/openai-agents-python/realtime/guide/)
+- [Voice Agents Quickstart](https://openai.github.io/openai-agents-python/voice/quickstart/)
 - [OpenAI Agents GitHub 仓库](https://github.com/openai/openai-agents-python)
+- [Tools 文档](https://openai.github.io/openai-agents-python/tools/)
 
 ## 许可证
 
@@ -215,4 +226,4 @@ MIT License
 
 ## 致谢
 
-本项目参考了 OpenAI Agents Python SDK 的示例代码，特别是 realtime CLI demo。
+本项目基于 OpenAI Agents Python SDK 实现，参考了官方 voice quickstart 文档和示例代码。
