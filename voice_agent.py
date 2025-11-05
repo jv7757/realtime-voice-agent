@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """
 实时语音 Bash 智能体
-基于 OpenAI Agents Python SDK 实现的实时语音助手，支持执行 bash 命令和文件操作
+基于 OpenAI Agents Python SDK 的语音管道实现，支持执行 bash 命令和文件操作
 """
 
 import asyncio
 import os
 import sys
-from typing import Dict, Any
+import numpy as np
 from dotenv import load_dotenv
 
 try:
-    from agents.realtime import RealtimeAgent, RealtimeRunner
-except ImportError:
-    print("错误: 未找到 openai-agents 库")
+    from agents import Agent
+    from agents.voice import VoicePipeline, SingleAgentVoiceWorkflow, VoicePipelineConfig
+    from agents.extensions.audio_player import AudioPlayer
+    from agents.extensions.audio_input import AudioInput, record_audio
+except ImportError as e:
+    print(f"错误: 未找到 openai-agents 库或其依赖: {e}")
     print("请运行: pip install 'openai-agents[voice]'")
     sys.exit(1)
 
@@ -29,12 +32,12 @@ from tools import (
 load_dotenv()
 
 
-def create_bash_agent() -> RealtimeAgent:
+def create_bash_agent() -> Agent:
     """
     创建实时语音 bash 智能体
 
     Returns:
-        配置好的 RealtimeAgent 实例
+        配置好的 Agent 实例
     """
     # Agent 指令
     instructions = """你是一个实时语音 Bash 智能体助手。
@@ -64,20 +67,17 @@ def create_bash_agent() -> RealtimeAgent:
 你: [使用 execute_bash_command 工具] "命令执行成功，找到了5个文件，详细信息已在终端显示"
 """
 
-    # 直接传递函数作为工具
-    # SDK 会自动从函数的类型注解和文档字符串中提取信息
-    tools = [
-        execute_bash_command,
-        read_file,
-        write_file,
-        list_directory
-    ]
-
-    # 创建 RealtimeAgent
-    agent = RealtimeAgent(
+    # 创建 Agent（使用 Agent 而不是 RealtimeAgent）
+    agent = Agent(
         name="Bash Assistant",
         instructions=instructions,
-        tools=tools
+        model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
+        tools=[
+            execute_bash_command,
+            read_file,
+            write_file,
+            list_directory
+        ]
     )
 
     return agent
@@ -103,32 +103,18 @@ async def run_voice_agent():
     # 创建智能体
     agent = create_bash_agent()
 
-    # 配置 RealtimeRunner
-    # 使用推荐的配置参数
-    model_name = os.getenv("MODEL_NAME", "gpt-4o-realtime-preview")
+    # 配置语音管道
     voice = os.getenv("VOICE", "alloy")
 
-    config = {
-        "model_settings": {
-            "model_name": model_name,
-            "voice": voice,
-            "modalities": ["audio", "text"],
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "input_audio_transcription": {
-                "model": "whisper-1"
-            },
-            "turn_detection": {
-                "type": "server_vad",
-                "threshold": 0.5,
-                "prefix_padding_ms": 300,
-                "silence_duration_ms": 500
-            }
-        }
-    }
+    config = VoicePipelineConfig(
+        tts_voice=voice
+    )
 
-    runner = RealtimeRunner(
-        starting_agent=agent,
+    # 创建 VoicePipeline
+    pipeline = VoicePipeline(
+        workflow=SingleAgentVoiceWorkflow(agent),
+        stt_model="gpt-4o-mini-transcribe",
+        tts_model="gpt-4o-mini-tts",
         config=config
     )
 
@@ -148,59 +134,77 @@ async def run_voice_agent():
     print("=" * 80)
     print()
 
+    # 创建音频播放器
+    audio_player = AudioPlayer()
+
     try:
-        # 启动会话
-        session = await runner.run()
+        print("🎤 会话已开始，请开始说话...")
+        print()
 
-        async with session:
-            print("🎤 会话已开始，请开始说话...")
-            print()
+        # 主循环：录音 -> 处理 -> 播放回复
+        while True:
+            try:
+                # 录音
+                print("🎤 正在录音... (说完话后会自动检测并处理)")
+                audio_input = await record_audio()
 
-            # 处理事件循环
-            async for event in session:
-                try:
-                    # 根据事件类型处理
+                if audio_input is None or len(audio_input.audio) == 0:
+                    print("⚠️  未检测到音频输入，请重试")
+                    continue
+
+                print(f"✓ 录音完成，时长: {len(audio_input.audio) / audio_input.sample_rate:.1f} 秒")
+                print("🔄 正在处理...")
+
+                # 处理音频并获取响应
+                async for event in pipeline.run(audio_input):
+                    # 处理不同类型的事件
                     if event.type == "agent_start":
-                        print(f"✓ 智能体启动: {event.agent.name}")
+                        print(f"\n✓ 智能体启动: {event.agent.name}")
 
                     elif event.type == "agent_end":
                         print(f"✓ 智能体结束: {event.agent.name}")
 
                     elif event.type == "tool_start":
                         print(f"\n🔧 开始执行工具: {event.tool.name}")
-                        # 如果有参数，显示参数信息
                         if hasattr(event, 'arguments'):
-                            print(f"   参数: {event.arguments}")
+                            # 显示工具参数（简化显示）
+                            args_str = str(event.arguments)[:100]
+                            print(f"   参数: {args_str}...")
 
                     elif event.type == "tool_end":
                         print(f"✓ 工具执行完成: {event.tool.name}")
-                        # 输出已在工具函数中显示在终端
 
-                    elif event.type == "response_audio_transcript":
-                        # 显示 AI 的语音转录文本
-                        if hasattr(event, 'transcript') and event.transcript:
-                            print(f"\n🤖 AI 语音回复: {event.transcript}")
+                    elif event.type == "text_delta":
+                        # AI 的文本回复（流式）
+                        if hasattr(event, 'delta') and event.delta:
+                            print(event.delta, end='', flush=True)
 
-                    elif event.type == "input_audio_transcript":
-                        # 显示用户的语音转录文本
-                        if hasattr(event, 'transcript') and event.transcript:
-                            print(f"\n👤 用户输入: {event.transcript}")
+                    elif event.type == "text_done":
+                        print()  # 换行
+
+                    elif event.type == "audio":
+                        # 播放音频响应
+                        if hasattr(event, 'audio') and event.audio is not None:
+                            audio_player.play(event.audio)
 
                     elif event.type == "error":
                         print(f"\n❌ 错误: {event.error}")
                         if "authentication" in str(event.error).lower():
                             print("   请检查您的 OPENAI_API_KEY 是否正确")
-                            break
+                            return
 
-                    elif event.type == "interruption":
-                        print("\n⚡ 检测到打断")
+                # 等待音频播放完成
+                await audio_player.wait()
+                print("\n" + "-" * 80 + "\n")
 
-                except KeyboardInterrupt:
-                    print("\n\n正在关闭会话...")
-                    break
-                except Exception as e:
-                    print(f"\n处理事件时出错: {e}")
-                    continue
+            except KeyboardInterrupt:
+                print("\n\n正在关闭会话...")
+                break
+            except Exception as e:
+                print(f"\n处理时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
 
     except KeyboardInterrupt:
         print("\n\n用户中断，正在退出...")
