@@ -211,11 +211,8 @@ async def run_voice_agent():
 
                 print(f"🔄 正在处理...")
 
-                # 创建 AudioInput
-                audio_input = AudioInput(
-                    buffer=audio_buffer,  # 参数名是 buffer 而不是 audio
-                    sample_rate=SAMPLE_RATE
-                )
+                # 创建 AudioInput（只接受 buffer 参数）
+                audio_input = AudioInput(buffer=audio_buffer)
 
                 # 处理音频并获取响应
                 response_audio = []
