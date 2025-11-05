@@ -216,46 +216,38 @@ async def run_voice_agent():
 
                 # 处理音频并获取响应
                 response_audio = []
-                response_text = []
 
-                async for event in pipeline.run(audio_input):
-                    # 处理不同类型的事件
-                    if event.type == "agent_start":
-                        print(f"\n✓ 智能体启动: {event.agent.name}")
+                # 运行管道并获取结果
+                result = await pipeline.run(audio_input)
 
-                    elif event.type == "agent_end":
-                        print(f"✓ 智能体结束")
-
-                    elif event.type == "tool_start":
-                        print(f"\n🔧 开始执行工具: {event.tool.name}")
-
-                    elif event.type == "tool_end":
-                        print(f"✓ 工具执行完成: {event.tool.name}")
-
-                    elif event.type == "text_delta":
-                        # AI 的文本回复（流式）
-                        if hasattr(event, 'delta') and event.delta:
-                            response_text.append(event.delta)
-                            print(event.delta, end='', flush=True)
-
-                    elif event.type == "text_done":
-                        print()  # 换行
-
-                    elif event.type == "audio_delta":
+                # 迭代结果流
+                async for event in result.stream():
+                    # VoicePipeline 事件类型
+                    if event.type == "voice_stream_event_audio":
                         # 收集音频数据
-                        if hasattr(event, 'audio') and event.audio is not None:
-                            response_audio.append(event.audio)
+                        if hasattr(event, 'data') and event.data is not None:
+                            response_audio.append(event.data)
 
-                    elif event.type == "error":
-                        print(f"\n❌ 错误: {event.error}")
-                        if "authentication" in str(event.error).lower():
-                            print("   请检查您的 OPENAI_API_KEY 是否正确")
-                            return
+                    elif event.type == "voice_stream_event_lifecycle":
+                        # 生命周期事件
+                        if hasattr(event, 'lifecycle_event'):
+                            lifecycle = event.lifecycle_event
+                            if lifecycle == "turn_started":
+                                print(f"\n✓ 回合开始")
+                            elif lifecycle == "turn_ended":
+                                print(f"✓ 回合结束")
+                            elif lifecycle == "session_ended":
+                                print(f"✓ 会话结束")
 
-                # 如果有文本回复，显示完整文本
-                if response_text:
-                    full_text = ''.join(response_text)
-                    print(f"\n🤖 AI 回复: {full_text}")
+                    elif event.type == "voice_stream_event_error":
+                        # 错误事件
+                        print(f"\n❌ 错误: {event}")
+                        if hasattr(event, 'error'):
+                            error_msg = str(event.error)
+                            print(f"   {error_msg}")
+                            if "authentication" in error_msg.lower():
+                                print("   请检查您的 OPENAI_API_KEY 是否正确")
+                                return
 
                 # 播放音频回复
                 if response_audio:
