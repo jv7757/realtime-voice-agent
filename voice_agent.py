@@ -13,7 +13,13 @@ from dotenv import load_dotenv
 
 try:
     from agents import Agent
-    from agents.voice import AudioInput, VoicePipeline, SingleAgentVoiceWorkflow, VoicePipelineConfig
+    from agents.voice import (
+        AudioInput,
+        VoicePipeline,
+        SingleAgentVoiceWorkflow,
+        VoicePipelineConfig,
+        TTSModelSettings
+    )
 except ImportError as e:
     print(f"错误: 未找到 openai-agents 库或其依赖: {e}")
     print("请运行: pip install 'openai-agents[voice]'")
@@ -149,8 +155,15 @@ async def run_voice_agent():
     # 配置语音管道
     voice = os.getenv("VOICE", "alloy")
 
+    # 创建 TTS 设置
+    tts_settings = TTSModelSettings(
+        voice=voice,
+        instructions="保持语音回复简洁明了，避免冗长。"
+    )
+
+    # 创建配置
     config = VoicePipelineConfig(
-        tts_voice=voice
+        tts_settings=tts_settings
     )
 
     # 创建 VoicePipeline
