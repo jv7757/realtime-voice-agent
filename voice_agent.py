@@ -213,7 +213,7 @@ async def run_voice_agent():
 
                 # 创建 AudioInput
                 audio_input = AudioInput(
-                    audio=audio_buffer,
+                    buffer=audio_buffer,  # 参数名是 buffer 而不是 audio
                     sample_rate=SAMPLE_RATE
                 )
 
