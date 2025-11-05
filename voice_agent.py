@@ -64,87 +64,13 @@ def create_bash_agent() -> RealtimeAgent:
 你: [使用 execute_bash_command 工具] "命令执行成功，找到了5个文件，详细信息已在终端显示"
 """
 
-    # 创建工具定义
+    # 直接传递函数作为工具
+    # SDK 会自动从函数的类型注解和文档字符串中提取信息
     tools = [
-        {
-            "type": "function",
-            "name": "execute_bash_command",
-            "description": "执行 bash 命令。命令的完整输出会在终端显示，你只需要语音总结关键信息。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "要执行的 bash 命令，例如: 'ls -la', 'pwd', 'cat file.txt'"
-                    }
-                },
-                "required": ["command"]
-            },
-            "function": execute_bash_command
-        },
-        {
-            "type": "function",
-            "name": "read_file",
-            "description": "读取文件内容。适用于需要查看文件内容的场景。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "要读取的文件路径"
-                    },
-                    "max_lines": {
-                        "type": "integer",
-                        "description": "最大读取行数（可选，默认1000）",
-                        "default": 1000
-                    }
-                },
-                "required": ["file_path"]
-            },
-            "function": read_file
-        },
-        {
-            "type": "function",
-            "name": "write_file",
-            "description": "写入内容到文件。可以创建新文件或覆盖/追加现有文件。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "要写入的文件路径"
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "要写入的内容"
-                    },
-                    "append": {
-                        "type": "boolean",
-                        "description": "是否追加模式（true=追加，false=覆盖，默认false）",
-                        "default": False
-                    }
-                },
-                "required": ["file_path", "content"]
-            },
-            "function": write_file
-        },
-        {
-            "type": "function",
-            "name": "list_directory",
-            "description": "列出目录内容，显示文件和子目录信息。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "directory_path": {
-                        "type": "string",
-                        "description": "目录路径（可选，默认当前目录）",
-                        "default": "."
-                    }
-                },
-                "required": []
-            },
-            "function": list_directory
-        }
+        execute_bash_command,
+        read_file,
+        write_file,
+        list_directory
     ]
 
     # 创建 RealtimeAgent
