@@ -115,7 +115,7 @@ python voice_agent.py
 
 ### 语音交互示例
 
-启动后，直接用语音说出你的需求：
+启动后，程序会进入录音循环（每轮录音 5 秒）：
 
 **基础命令**：
 - "你好" / "开始" - AI 会介绍自己的功能
@@ -132,6 +132,12 @@ python voice_agent.py
 - "查看当前目录下有什么文件" - 列出目录内容
 - "列出 /tmp 目录" - 查看指定目录
 
+**工作流程**：
+1. 程序显示 "🎤 开始录音（5 秒）..."
+2. 说出你的请求
+3. 录音完成后，AI 处理请求并语音回复
+4. 自动进入下一轮对话
+
 **退出**：
 - 按 `Ctrl+C` 退出程序
 
@@ -144,10 +150,12 @@ python voice_agent.py
 
 ## 依赖库
 
-- `openai-agents[voice]` - OpenAI Agents SDK with voice support
-- `sounddevice` - 音频输入输出
-- `numpy` - 数值计算
+- `openai-agents[voice]` - OpenAI Agents SDK with voice support (包含语音转文字和文字转语音)
+- `sounddevice` - 音频输入输出 (录音和播放)
+- `numpy` - 数值计算 (音频数据处理)
 - `python-dotenv` - 环境变量管理
+
+**注意**: `openai-agents[voice]` 会自动安装所需的依赖，包括 `sounddevice` 和 `numpy`。
 
 ## 项目结构
 
@@ -201,13 +209,35 @@ pip install 'openai-agents[voice]'
 
 确保系统有可用的麦克风和扬声器，并检查权限设置。
 
+在 macOS 上，你可能需要在"系统偏好设置" > "安全性与隐私" > "麦克风"中授予终端或 Python 访问麦克风的权限。
+
+在 Linux 上，确保安装了 PortAudio：
+```bash
+# Ubuntu/Debian
+sudo apt-get install portaudio19-dev
+
+# Fedora
+sudo dnf install portaudio-devel
+
+# macOS
+brew install portaudio
+```
+
 ### 3. API 认证错误
 
 检查 `.env` 文件中的 `OPENAI_API_KEY` 是否正确设置。
 
 ### 4. 网络连接问题
 
-Realtime API 需要稳定的网络连接，请检查网络状态。
+Voice API 需要稳定的网络连接，请检查网络状态。
+
+### 5. 录音时长调整
+
+如果 5 秒录音时长不够，可以编辑 `voice_agent.py` 中的录音时长：
+```python
+# 修改这一行的 duration 参数
+audio_buffer = record_audio_blocking(duration=10)  # 改为 10 秒
+```
 
 ## 参考资料
 
