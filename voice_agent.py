@@ -8,13 +8,12 @@ import asyncio
 import os
 import sys
 import numpy as np
+import sounddevice as sd
 from dotenv import load_dotenv
 
 try:
     from agents import Agent
-    from agents.voice import VoicePipeline, SingleAgentVoiceWorkflow, VoicePipelineConfig
-    from agents.extensions.audio_player import AudioPlayer
-    from agents.extensions.audio_input import AudioInput, record_audio
+    from agents.voice import AudioInput, VoicePipeline, SingleAgentVoiceWorkflow, VoicePipelineConfig
 except ImportError as e:
     print(f"错误: 未找到 openai-agents 库或其依赖: {e}")
     print("请运行: pip install 'openai-agents[voice]'")
@@ -30,6 +29,12 @@ from tools import (
 
 # 加载环境变量
 load_dotenv()
+
+
+# 音频配置
+SAMPLE_RATE = 24000  # 24kHz
+CHANNELS = 1
+DTYPE = np.int16
 
 
 def create_bash_agent() -> Agent:
@@ -67,7 +72,7 @@ def create_bash_agent() -> Agent:
 你: [使用 execute_bash_command 工具] "命令执行成功，找到了5个文件，详细信息已在终端显示"
 """
 
-    # 创建 Agent（使用 Agent 而不是 RealtimeAgent）
+    # 创建 Agent
     agent = Agent(
         name="Bash Assistant",
         instructions=instructions,
@@ -81,6 +86,44 @@ def create_bash_agent() -> Agent:
     )
 
     return agent
+
+
+def record_audio_blocking(duration: int = 5) -> np.ndarray:
+    """
+    录制音频（阻塞式）
+
+    Args:
+        duration: 录音时长（秒）
+
+    Returns:
+        音频数据数组
+    """
+    print(f"🎤 开始录音（{duration} 秒）...")
+    audio_data = sd.rec(
+        int(duration * SAMPLE_RATE),
+        samplerate=SAMPLE_RATE,
+        channels=CHANNELS,
+        dtype=DTYPE
+    )
+    sd.wait()  # 等待录音完成
+    print("✓ 录音完成")
+    return audio_data.flatten()
+
+
+def play_audio(audio_data: np.ndarray):
+    """
+    播放音频
+
+    Args:
+        audio_data: 音频数据数组
+    """
+    if len(audio_data) == 0:
+        return
+
+    print("🔊 播放回复...")
+    sd.play(audio_data, samplerate=SAMPLE_RATE)
+    sd.wait()  # 等待播放完成
+    print("✓ 播放完成")
 
 
 async def run_voice_agent():
@@ -127,49 +170,54 @@ async def run_voice_agent():
     print("  - 命令输出会在终端显示，AI 会语音总结重点信息")
     print()
     print("使用说明：")
-    print("  - 直接用语音说出你的需求")
+    print("  - 每轮对话会录音 5 秒")
     print("  - 例如：'列出当前目录', '执行 ls 命令', '读取 README 文件'")
     print("  - 按 Ctrl+C 退出")
     print()
     print("=" * 80)
     print()
 
-    # 创建音频播放器
-    audio_player = AudioPlayer()
-
     try:
-        print("🎤 会话已开始，请开始说话...")
+        print("🎤 会话已开始！")
         print()
 
         # 主循环：录音 -> 处理 -> 播放回复
+        round_num = 1
         while True:
             try:
-                # 录音
-                print("🎤 正在录音... (说完话后会自动检测并处理)")
-                audio_input = await record_audio()
+                print(f"\n【第 {round_num} 轮对话】")
+                print("-" * 80)
 
-                if audio_input is None or len(audio_input.audio) == 0:
-                    print("⚠️  未检测到音频输入，请重试")
+                # 录音
+                audio_buffer = record_audio_blocking(duration=5)
+
+                # 检查音频是否为空
+                if np.max(np.abs(audio_buffer)) < 100:  # 音量太小
+                    print("⚠️  未检测到明显的音频输入，请重试")
                     continue
 
-                print(f"✓ 录音完成，时长: {len(audio_input.audio) / audio_input.sample_rate:.1f} 秒")
-                print("🔄 正在处理...")
+                print(f"🔄 正在处理...")
+
+                # 创建 AudioInput
+                audio_input = AudioInput(
+                    audio=audio_buffer,
+                    sample_rate=SAMPLE_RATE
+                )
 
                 # 处理音频并获取响应
+                response_audio = []
+                response_text = []
+
                 async for event in pipeline.run(audio_input):
                     # 处理不同类型的事件
                     if event.type == "agent_start":
                         print(f"\n✓ 智能体启动: {event.agent.name}")
 
                     elif event.type == "agent_end":
-                        print(f"✓ 智能体结束: {event.agent.name}")
+                        print(f"✓ 智能体结束")
 
                     elif event.type == "tool_start":
                         print(f"\n🔧 开始执行工具: {event.tool.name}")
-                        if hasattr(event, 'arguments'):
-                            # 显示工具参数（简化显示）
-                            args_str = str(event.arguments)[:100]
-                            print(f"   参数: {args_str}...")
 
                     elif event.type == "tool_end":
                         print(f"✓ 工具执行完成: {event.tool.name}")
@@ -177,15 +225,16 @@ async def run_voice_agent():
                     elif event.type == "text_delta":
                         # AI 的文本回复（流式）
                         if hasattr(event, 'delta') and event.delta:
+                            response_text.append(event.delta)
                             print(event.delta, end='', flush=True)
 
                     elif event.type == "text_done":
                         print()  # 换行
 
-                    elif event.type == "audio":
-                        # 播放音频响应
+                    elif event.type == "audio_delta":
+                        # 收集音频数据
                         if hasattr(event, 'audio') and event.audio is not None:
-                            audio_player.play(event.audio)
+                            response_audio.append(event.audio)
 
                     elif event.type == "error":
                         print(f"\n❌ 错误: {event.error}")
@@ -193,9 +242,21 @@ async def run_voice_agent():
                             print("   请检查您的 OPENAI_API_KEY 是否正确")
                             return
 
-                # 等待音频播放完成
-                await audio_player.wait()
-                print("\n" + "-" * 80 + "\n")
+                # 如果有文本回复，显示完整文本
+                if response_text:
+                    full_text = ''.join(response_text)
+                    print(f"\n🤖 AI 回复: {full_text}")
+
+                # 播放音频回复
+                if response_audio:
+                    # 合并所有音频片段
+                    full_audio = np.concatenate(response_audio)
+                    play_audio(full_audio)
+                else:
+                    print("⚠️  未收到音频回复")
+
+                print("\n" + "-" * 80)
+                round_num += 1
 
             except KeyboardInterrupt:
                 print("\n\n正在关闭会话...")
@@ -204,6 +265,7 @@ async def run_voice_agent():
                 print(f"\n处理时出错: {e}")
                 import traceback
                 traceback.print_exc()
+                print("\n继续下一轮...")
                 continue
 
     except KeyboardInterrupt:
